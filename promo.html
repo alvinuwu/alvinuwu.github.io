@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Promotions</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="apple-touch-icon" sizes="180x180" href="Assets/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="Assets/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="Assets/favicon-16x16.png">
+  <link rel="stylesheet" href="style.css" />
+</head>
+  <!-- Top navigation bar -->
+  <header class="navbar">
+    <div class="nav-inner">
+      <div class="nav-brand"><a href="https://www.wynnvets.org">Returners</a></div>
+      <nav class="nav-links">
+        <!-- Change href="/index.html" if your main board lives somewhere else -->
+        <a href="annihilation.html">Annihilation Guide</a>
+        <a href="recruitment-guide.html">Recruitment Guide</a>
+        <a href="promo.html">Promotion</a>
+        <a href="https://wynnvets.org/discord" target="_blank" rel="noopener">
+          Discord
+        </a>
+      </nav>
+    </div>
+  </header>
+<script type="module">
+  import { protectPage } from "./auth.js";
+  protectPage();
+</script>
+<body>
+<div class="page">
+  <h1 id="pageTitle"></h1>
+  <p class="muted">
+    Anyone can add candidates and comment. Updates are live for everyone.
+  </p>
+
+  <!-- Add candidate (name only) -->
+  <div class="card">
+    <h2>Add Candidate</h2>
+    <form id="candidateForm">
+      <label>Username</label>
+      <input name="name" required placeholder="e.g. Bob" />
+      <button type="submit">Add candidate</button>
+    </form>
+  </div>
+
+  <!-- Candidate table -->
+<div class="card">
+  <h2>Promotion List</h2>
+
+  <div class="filter-row">
+    <button type="button" id="monthPrev" class="month-arrow" aria-label="Previous month">◀</button>
+
+    <label for="monthFilter">Month</label>
+
+    <button type="button" id="monthNext" class="month-arrow" aria-label="Next month">▶</button>
+    <select id="monthFilter">
+      <option value="current">This month</option>
+      <option value="all">All months</option>
+    </select>
+  </div>
+
+  <div class="export-row">
+    <button id="exportCsvBtn" class="export-button">
+      Export CSV
+    </button>
+    <button id="exportPdfBtn" class="export-button export-button-secondary">
+      Export PDF
+    </button>
+  </div>
+
+  <div id="candidateTable" class="table">
+</div>
+
+<!-- Firebase (modular SDK) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import {
+    getDatabase,
+    ref,
+    push,
+    set,
+    onValue,
+    update,
+    remove
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  // Your config here
+  const firebaseConfig = {
+    apiKey: "AIzaSyBNS9RtaA1vpzwu8jGQ15jgpNN3UYl4rlw",
+    authDomain: "wynnvets.firebaseapp.com",
+    projectId: "wynnvets",
+    storageBucket: "wynnvets.firebasestorage.app",
+    messagingSenderId: "919163929856",
+    appId: "1:919163929856:web:1042d6daa029dc11445fe5",
+    measurementId: "G-KT2LYJ42H5"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
+
+  const candidatesRef = ref(db, "candidates");
+  const commentsRef   = ref(db, "comments");
+
+  const candidateForm  = document.getElementById("candidateForm");
+  const candidateTable = document.getElementById("candidateTable");
+
+  const monthFilter = document.getElementById("monthFilter");
+  const monthPrev   = document.getElementById("monthPrev");
+  const monthNext   = document.getElementById("monthNext");
+  const exportCsvBtn = document.getElementById("exportCsvBtn");
+  const exportPdfBtn = document.getElementById("exportPdfBtn");
+
+
+  let candidatesCache = {};
+  let commentsCache   = {};
+  let sortedCandidateIds = [];
+  let commentFormState = {};
+  let activeMonth = "current"; // "current" | "all" | "YYYY-MM"
+
+  function formatDate(ts) {
+    if (!ts) return "";
+    return new Date(ts).toLocaleString();
+  }
+
+// ---- Text helpers ----
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Highlight special phrases like "Admin block" (case-insensitive)
+function highlightPhrases(str) {
+  if (!str) return "";
+
+  const escaped = escapeHtml(str);
+  return escaped.replace(
+    /(admin block)/ig,
+    '<span class="highlight-admin-block">$1</span>'
+  );
+}
+
+// ---- Month helpers ----
+function getMonthKey(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`; // e.g. "2025-11"
+}
+
+function formatMonthLabel(key) {
+  const [y, m] = key.split("-");
+  const d = new Date(Number(y), Number(m) - 1, 1);
+  return d.toLocaleString(undefined, { month: "long", year: "numeric" });
+}
+
+function updateMonthFilterOptions() {
+  if (!monthFilter) return;
+
+  const monthsSet = new Set();
+  Object.values(candidatesCache).forEach(c => {
+    const key = getMonthKey(c.createdAt);
+    if (key) monthsSet.add(key);
+  });
+
+  let months = Array.from(monthsSet).sort().reverse(); // newest first
+  const currentKey = getMonthKey(Date.now());
+
+  // ensure activeMonth key is present (for testing months with no data)
+  if (
+    activeMonth &&
+    activeMonth !== "current" &&
+    activeMonth !== "all" &&
+    !months.includes(activeMonth)
+  ) {
+    months.push(activeMonth);
+    months = months.sort().reverse();
+  }
+
+  monthFilter.innerHTML = "";
+
+  const optCurrent = document.createElement("option");
+  optCurrent.value = "current";
+  optCurrent.textContent = `This month (${formatMonthLabel(currentKey)})`;
+  monthFilter.appendChild(optCurrent);
+
+  const optAll = document.createElement("option");
+  optAll.value = "all";
+  optAll.textContent = "All months";
+  monthFilter.appendChild(optAll);
+
+  months.forEach(key => {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = formatMonthLabel(key);
+    monthFilter.appendChild(opt);
+  });
+
+  // keep selection if still valid
+  if (
+    activeMonth !== "current" &&
+    activeMonth !== "all" &&
+    !months.includes(activeMonth)
+  ) {
+    activeMonth = "current";
+  }
+
+  monthFilter.value = activeMonth;
+}
+
+function shiftActiveMonth(delta) {
+  const baseKey = getBaseMonthKeyForShift(); // "YYYY-MM"
+  const [y, m] = baseKey.split("-").map(Number);
+
+  // new Date(year, monthIndex +/- delta, 1) auto-wraps years correctly
+  const d = new Date(y, (m - 1) + delta, 1);
+  const newKey = getMonthKey(d.getTime()); // back to "YYYY-MM"
+
+  activeMonth = newKey;
+
+  // update dropdown options and selection to include this new month
+  updateMonthFilterOptions();
+  if (monthFilter) {
+    monthFilter.value = activeMonth;
+  }
+
+  // update page title + table for the new month
+  if (typeof updatePageTitle === "function") {
+    updatePageTitle();
+  }
+  render();
+}
+
+if (monthPrev) {
+  monthPrev.addEventListener("click", () => {
+    shiftActiveMonth(-1);  // one month back
+  });
+}
+
+if (monthNext) {
+  monthNext.addEventListener("click", () => {
+    shiftActiveMonth(1);   // one month forward
+  });
+}
+
+
+function updatePageTitle() {
+  const titleEl = document.getElementById("pageTitle");
+  if (!titleEl) return;
+
+  const nowKey = getMonthKey(Date.now());
+
+  let label = "";
+  if (activeMonth === "all") {
+    label = "All Promotions";
+  } else if (activeMonth === "current") {
+    label = `${formatMonthLabel(nowKey)} Promotions`;
+  } else {
+    label = `${formatMonthLabel(activeMonth)} Promotions`;
+  }
+
+  titleEl.textContent = label;
+}
+
+function getBaseMonthKeyForShift() {
+  // If we're on "all" or "current", use the real current month as the base
+  if (!activeMonth || activeMonth === "all" || activeMonth === "current") {
+    return getMonthKey(Date.now());
+  }
+  return activeMonth; // e.g. "2025-11"
+}
+
+function getActiveMonthLabelForFilename() {
+  const nowKey = getMonthKey(Date.now());
+  let key;
+
+  if (activeMonth === "all") {
+    return "all-months";
+  }
+
+  if (!activeMonth || activeMonth === "current") {
+    key = nowKey;
+  } else {
+    key = activeMonth; // "YYYY-MM"
+  }
+
+  return key; // this becomes part of the filename
+}
+
+function getActiveMonthLabelPretty() {
+  const nowKey = getMonthKey(Date.now());
+
+  if (activeMonth === "all") {
+    return "All months";
+  }
+
+  const key =
+    !activeMonth || activeMonth === "current" ? nowKey : activeMonth;
+
+  // uses your existing formatMonthLabel("YYYY-MM") => "November 2025"
+  return formatMonthLabel(key);
+}
+
+function exportCurrentViewToCSV() {
+  const ids = sortedCandidateIds || [];
+  if (!ids.length) {
+    alert("No candidates to export for this month.");
+    return;
+  }
+
+  const lines = [];
+  // header row (Created at removed)
+  lines.push([
+    "Username",
+    "Admin Veto",
+    "Status",
+    "Positive Comment",
+    "Negative Comment"
+  ].join(","));
+
+  ids.forEach(id => {
+    const c = candidatesCache[id];
+    if (!c) return;
+
+    const commentsForCandidate = commentsCache[id] || {};
+    const positives = commentsForCandidate.positive || {};
+    const negatives = commentsForCandidate.negative || {};
+
+    const posList = Object.values(positives)
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+      .map(cm => `${cm.author || "Anon"}: ${cm.text || ""}`);
+
+    const negList = Object.values(negatives)
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+      .map(cm => `${cm.author || "Anon"}: ${cm.text || ""}`);
+
+    // newline between comments instead of " | "
+    const posJoined = posList.join("\n");
+    const negJoined = negList.join("\n");
+
+    function csvField(v) {
+      const s = (v ?? "").toString().replace(/"/g, '""');
+      return `"${s}"`; // quotes allow newlines inside the cell
+    }
+
+    const row = [
+      csvField(c.name || ""),
+      csvField(c.adminVeto || ""),
+      csvField(c.status || ""),
+      csvField(posJoined),
+      csvField(negJoined)
+    ].join(",");
+
+    lines.push(row);
+  });
+
+  const csvContent = lines.join("\r\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const label = getActiveMonthLabelForFilename();
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `promotion-list-${label}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function formatStatus(status) {
+  switch (status) {
+    case "first":
+      return "First Eligibility";
+    case "successive":
+      return "Successive Eligibility";
+    case "returning":
+      return "Returning Eligible";
+    default:
+      return status; // fallback
+  }
+}
+
+function exportCurrentViewToPDF() {
+  const ids = sortedCandidateIds || [];
+  if (!ids.length) {
+    alert("No candidates to export for this month.");
+    return;
+  }
+
+  const labelSlug   = getActiveMonthLabelForFilename();
+  const prettyLabel = getActiveMonthLabelPretty();
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    alert("Popup blocked. Please allow popups to export as PDF.");
+    return;
+  }
+
+  win.document.write(`
+    <html>
+      <head>
+        <title>Guild Promotion - ${prettyLabel}</title>
+        <style>
+          body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            padding: 32px;
+            color: #111827;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+
+            /* Soft modern gradient */
+            background: linear-gradient(135deg, #eef2ff, #fef9c3);
+            background-attachment: fixed;
+          }
+
+          .pdf-container {
+            width: 100%;
+            max-width: 900px;
+            background: white;          /* keeps content readable */
+            padding: 24px 28px;
+            border-radius: 14px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+          }
+
+          h1 {
+            font-size: 22px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            text-align: center;
+          }
+
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+          }
+
+          th, td {
+            border: 1px solid #e5e7eb;
+            padding: 6px 8px;
+            font-size: 12px;
+            text-align: left;
+            vertical-align: top;
+          }
+
+          th {
+            background: #f3f4f6;
+          }
+
+          /* Column widths */
+          th:nth-child(1), td:nth-child(1) { width: 110px; }
+          th:nth-child(2), td:nth-child(2) { width: 70px; }
+          th:nth-child(3), td:nth-child(3) { width: 110px; }
+        </style>
+
+      </head>
+      <body>
+        <div class="pdf-container">
+          <h1>Guild Promotion - ${prettyLabel}</h1>
+          <table>
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Admin Veto</th>
+                <th>Status</th>
+                <th>Positive feedback</th>
+                <th>Negative feedback</th>
+              </tr>
+            </thead>
+            <tbody>
+  `);
+
+  ids.forEach(id => {
+    const c = candidatesCache[id];
+    if (!c) return;
+
+    const commentsForCandidate = commentsCache[id] || {};
+    const positives = commentsForCandidate.positive || {};
+    const negatives = commentsForCandidate.negative || {};
+
+    const posList = Object.values(positives)
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+      .map(cm => `[${cm.author || "Anon"}] ${cm.text || ""}`);
+
+    const negList = Object.values(negatives)
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+      .map(cm => `[${cm.author || "Anon"}] ${cm.text || ""}`);
+
+    // escape each comment, then join with <br> so each is on its own line
+    const posHtml = posList.map(v => escapeHtml(v)).join("<br>");
+    const negHtml = negList.map(v => escapeHtml(v)).join("<br>");
+
+    win.document.write(`
+      <tr>
+        <td>${escapeHtml(c.name || "")}</td>
+        <td>${escapeHtml(c.adminVeto || "")}</td>
+        <td>${escapeHtml(formatStatus(c.status || ""))}</td>
+        <td>${posHtml}</td>
+        <td>${negHtml}</td>
+      </tr>
+    `);
+  });
+
+  win.document.write(`
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `);
+
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+if (exportCsvBtn) {
+  exportCsvBtn.addEventListener("click", () => {
+    exportCurrentViewToCSV();
+  });
+}
+
+if (exportPdfBtn) {
+  exportPdfBtn.addEventListener("click", () => {
+    exportCurrentViewToPDF();
+  });
+}
+function render() {
+  const candidates = candidatesCache || {};
+  const currentMonthKey = getMonthKey(Date.now());
+
+  const ids = Object.keys(candidates)
+    .filter(id => {
+      const c = candidates[id];
+      const key = getMonthKey(c.createdAt);
+
+      if (activeMonth === "all") return true;
+      if (activeMonth === "current") return key === currentMonthKey;
+      return key === activeMonth; // specific "YYYY-MM"
+    })
+    .sort((a, b) => {
+      const aOrder = candidates[a].order ?? candidates[a].createdAt ?? 0;
+      const bOrder = candidates[b].order ?? candidates[b].createdAt ?? 0;
+      return aOrder - bOrder;
+    });
+
+  sortedCandidateIds = ids.slice();
+  candidateTable.innerHTML = "";
+
+  if (ids.length === 0) {
+    candidateTable.innerHTML = '<div class="no-data">No candidates yet for this month.</div>';
+    return;
+  }
+
+  const header = document.createElement("div");
+  header.className = "table-header";
+  header.innerHTML = `
+    <div>Admin Veto</div>
+    <div>Username</div>
+    <div>Status</div>
+    <div>Positive Comments</div>
+    <div>Negative Comments</div>
+    <div>Settings</div>
+  `;
+  candidateTable.appendChild(header);
+
+  ids.forEach((id, index) => {
+    const c = candidates[id];
+    const commentsForCandidate = commentsCache[id] || {};
+    const positives = commentsForCandidate.positive || {};
+    const negatives = commentsForCandidate.negative || {};
+
+    const row = document.createElement("div");
+    row.className = "table-row";
+
+    row.style.animationDelay = `${0.28 + index * 0.04}s`;
+    /* ADMIN VETO CELL */
+    const vetoCell = document.createElement("div");
+    const veto = (c.adminVeto || "no").toLowerCase();
+    const vetoClass = veto === "yes" ? "veto-yes" : "veto-no";
+    vetoCell.innerHTML = `
+      <select
+        class="inline-select veto-select ${vetoClass}"
+        data-candidate-id="${id}"
+      >
+        <option value="no"${veto === "no" ? " selected" : ""}>No</option>
+        <option value="yes"${veto === "yes" ? " selected" : ""}>Yes</option>
+      </select>
+    `;
+    row.appendChild(vetoCell);
+
+    /* USERNAME CELL */
+    const nameCell = document.createElement("div");
+    nameCell.innerHTML = `
+      <div class="username">${c.name || "(no name)"}</div>
+    `;
+    row.appendChild(nameCell);
+
+    /* STATUS CELL */
+    const statusCell = document.createElement("div");
+    const status = (c.status || "first").toLowerCase();
+    let statusClass = "status-first";
+    if (status === "successive") statusClass = "status-successive";
+    else if (status === "returning") statusClass = "status-returning";
+
+    statusCell.innerHTML = `
+      <select
+        class="inline-select status-select ${statusClass}"
+        data-candidate-id="${id}"
+      >
+        <option value="successive"${status === "successive" ? " selected" : ""}>
+          Successive Eligibility
+        </option>
+        <option value="returning"${status === "returning" ? " selected" : ""}>
+          Returning Eligible
+        </option>
+        <option value="first"${status === "first" ? " selected" : ""}>
+          First Eligibility
+        </option>
+      </select>
+    `;
+    row.appendChild(statusCell);
+
+    /* POSITIVE COMMENTS CELL */
+    const posCell = document.createElement("div");
+    const posIds = Object.keys(positives)
+      .sort((a, b) => (positives[b].createdAt || 0) - (positives[a].createdAt || 0));
+
+    if (posIds.length === 0) {
+      posCell.innerHTML = `<div class="no-data" style="border:none;padding:0;margin-bottom:.35rem;">No positive comments yet.</div>`;
+    } else {
+      posIds.forEach(cid => {
+        const cm = positives[cid];
+        const el = document.createElement("div");
+        el.className = "comment editable-comment";
+        el.dataset.candidateId = id;
+        el.dataset.type = "positive";
+        el.dataset.commentId = cid;
+        el.innerHTML = `
+            <span class="author"><b>${cm.author}</b></span>
+            <br>
+            <span class="text">${highlightPhrases(cm.text || "")}</span>
+        `;
+        posCell.appendChild(el);
+      });
+    }
+
+    // Positive comment form wrapper (hidden by default)
+    const posWrapper = document.createElement("div");
+    posWrapper.className = "comment-form-wrapper hidden";
+    posWrapper.innerHTML = `
+      <br><br><div class="comment-form-title">Add positive comment</div>
+      <form class="comment-form" data-candidate-id="${id}" data-type="positive">
+        <input name="author" required placeholder="Your name" />
+        <textarea name="text" required placeholder="Positive comment"></textarea>
+        <button type="submit">Add</button>
+      </form>
+    `;
+    posCell.appendChild(posWrapper);
+
+    row.appendChild(posCell);
+
+    /* NEGATIVE COMMENTS CELL */
+    const negCell = document.createElement("div");
+    const negIds = Object.keys(negatives)
+      .sort((a, b) => (negatives[b].createdAt || 0) - (negatives[a].createdAt || 0));
+
+    if (negIds.length === 0) {
+      negCell.innerHTML = `<div class="no-data" style="border:none;padding:0;margin-bottom:.35rem;">No negative comment yet.</div>`;
+    } else {
+      negIds.forEach(cid => {
+        const cm = negatives[cid];
+        const el = document.createElement("div");
+        el.className = "comment editable-comment";
+        el.dataset.candidateId = id;
+        el.dataset.type = "negative";
+        el.dataset.commentId = cid;
+        el.innerHTML = `
+            <span class="author"><b>${cm.author}</b></span>
+            <br>
+            <span class="text">${highlightPhrases(cm.text || "")}</span>
+        `;
+        negCell.appendChild(el);
+      });
+    }
+
+    // Negative form wrapper (also hidden, toggled by same button)
+    const negWrapper = document.createElement("div");
+    negWrapper.className = "comment-form-wrapper hidden";
+    negWrapper.innerHTML = `
+      <br><br><div class="comment-form-title">Add negative comment</div>
+      <form class="comment-form" data-candidate-id="${id}" data-type="negative">
+        <input name="author" required placeholder="Your name" />
+        <textarea name="text" required placeholder="Negative comment"></textarea>
+        <button type="submit">Add</button>
+      </form>
+    `;
+    negCell.appendChild(negWrapper);
+
+    row.appendChild(negCell);
+
+    /* SETTINGS CELL */
+    const settingsCell = document.createElement("div");
+    settingsCell.innerHTML = `
+      <div class="row-actions">
+        <button type="button" class="row-action move-up" data-candidate-id="${id}">▲</button>
+        <button type="button" class="row-action move-down" data-candidate-id="${id}">▼</button>
+        <button type="button" class="row-action delete-row" data-candidate-id="${id}">✕ Delete</button>
+      </div>
+    `;
+
+    // "+ Comment" button (toggles both forms for this row)
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "add-comment-button";
+    addBtn.dataset.candidateId = id;
+    addBtn.textContent = "+ Comment";
+    settingsCell.appendChild(addBtn);
+    
+    row.appendChild(settingsCell);
+
+    candidateTable.appendChild(row);
+  });
+}
+
+  // Live listeners
+  onValue(candidatesRef, (snap) => {
+    candidatesCache = snap.val() || {};
+    updateMonthFilterOptions();
+    updatePageTitle();
+    render();
+  });
+
+  onValue(commentsRef, (snap) => {
+    commentsCache = snap.val() || {};
+    render();
+  });
+
+  monthFilter.addEventListener("change", () => {
+    activeMonth = monthFilter.value;
+    updatePageTitle();
+    render();
+  });
+
+  // Add candidate (name only, defaults for other fields)
+  candidateForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(candidateForm);
+    const name = (fd.get("name") || "").toString().trim();
+
+    if (!name) {
+      alert("Username is required.");
+      return;
+    }
+
+    const timestampForMonth = getTimestampForActiveMonth();
+    const newRef = push(candidatesRef);
+    await set(newRef, {
+      name,
+      adminVeto: "no",
+      status: "first",
+      notes: "",
+      createdAt: timestampForMonth,
+      order: timestampForMonth
+    });
+
+    candidateForm.reset();
+  });
+
+  function getTimestampForActiveMonth() {
+    // When on "This month" or "All months", just use the real current time.
+    if (!activeMonth || activeMonth === "current" || activeMonth === "all") {
+      return Date.now();
+    }
+
+    // If activeMonth is a specific "YYYY-MM", create a date in that month.
+    const match = /^(\d{4})-(\d{2})$/.exec(activeMonth);
+    if (!match) {
+      return Date.now(); // fallback if something is weird
+    }
+
+    const year  = Number(match[1]);
+    const month = Number(match[2]); // 1-12
+
+    // Pick the 1st of that month at noon (avoids DST edge weirdness)
+    const d = new Date(year, month - 1, 1, 12, 0, 0, 0);
+    return d.getTime();
+  }
+
+  // Comment forms + veto / status dropdowns
+  candidateTable.addEventListener("submit", async (e) => {
+    const form = e.target;
+    if (!form.classList.contains("comment-form")) return;
+
+    e.preventDefault();
+
+    const candidateId = form.getAttribute("data-candidate-id");
+    const type = form.getAttribute("data-type"); // positive | negative
+
+    const fd = new FormData(form);
+    const author = (fd.get("author") || "").toString().trim();
+    const text   = (fd.get("text") || "").toString().trim();
+
+    if (!text) {
+      alert("Comment text is required.");
+      return;
+    }
+
+    const branchRef = ref(db, `comments/${candidateId}/${type}`);
+    const newCommentRef = push(branchRef);
+    await set(newCommentRef, {
+      author,
+      text,
+      createdAt: Date.now()
+    });
+
+    form.reset();
+  });
+
+  // Handle dropdown changes for veto + status
+  candidateTable.addEventListener("change", async (e) => {
+    const target = e.target;
+    if (!target.classList.contains("veto-select") &&
+        !target.classList.contains("status-select")) return;
+
+    const candidateId = target.getAttribute("data-candidate-id");
+    if (!candidateId) return;
+
+    const updateData = {};
+    if (target.classList.contains("veto-select")) {
+      updateData.adminVeto = target.value;
+    } else {
+      updateData.status = target.value;
+    }
+
+    try {
+      await update(ref(db, `candidates/${candidateId}`), updateData);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update field. Check your rules/connection.");
+    }
+  });
+
+  candidateTable.addEventListener("click", async (e) => {
+    const target = e.target;
+
+    // Toggle showing/hiding the add-comment forms
+    if (target.classList.contains("add-comment-button")) {
+      const row = target.closest(".table-row");
+      if (!row) return;
+
+      const wrappers = row.querySelectorAll(".comment-form-wrapper");
+      wrappers.forEach(w => w.classList.toggle("hidden"));
+
+      // Optional: change button text
+      const first = wrappers[0];
+      if (first && first.classList.contains("hidden")) {
+        target.textContent = "+ Comment";
+      } else {
+        target.textContent = "Hide comment forms";
+      }
+      return;
+    }
+
+    // Row actions: move up/down/delete
+    if (target.classList.contains("row-action")) {
+      const candidateId = target.getAttribute("data-candidate-id");
+      if (!candidateId) return;
+
+      if (target.classList.contains("delete-row")) {
+        if (!confirm("Delete this candidate and all its comments?")) return;
+        try {
+          await remove(ref(db, `candidates/${candidateId}`));
+          await remove(ref(db, `comments/${candidateId}`));
+        } catch (err) {
+          console.error(err);
+          alert("Failed to delete candidate.");
+        }
+        return;
+      }
+
+      // Move up/down
+      const idx = sortedCandidateIds.indexOf(candidateId);
+      if (idx === -1) return;
+
+      const isUp = target.classList.contains("move-up");
+      const newIdx = isUp ? idx - 1 : idx + 1;
+      if (newIdx < 0 || newIdx >= sortedCandidateIds.length) return;
+
+      const otherId = sortedCandidateIds[newIdx];
+      const thisOrder  = candidatesCache[candidateId].order ?? candidatesCache[candidateId].createdAt ?? 0;
+      const otherOrder = candidatesCache[otherId].order      ?? candidatesCache[otherId].createdAt      ?? 0;
+
+      try {
+        await update(ref(db, `candidates/${candidateId}`), { order: otherOrder });
+        await update(ref(db, `candidates/${otherId}`),     { order: thisOrder });
+      } catch (err) {
+        console.error(err);
+        alert("Failed to shift row.");
+      }
+      return;
+    }
+
+    // Comment edit - click anywhere on the comment block
+    const commentEl = target.closest(".editable-comment");
+    if (commentEl) {
+      const candidateId = commentEl.dataset.candidateId;
+      const type        = commentEl.dataset.type;      // "positive" | "negative"
+      const commentId   = commentEl.dataset.commentId;
+
+      const cm = commentsCache?.[candidateId]?.[type]?.[commentId];
+      if (!cm) return;
+
+      const current = cm.text || "";
+      const updated = prompt("Edit comment text:", current);
+      if (updated === null) return; // cancelled
+
+      const trimmed = updated.trim();
+      if (!trimmed) {
+        alert("Comment cannot be empty.");
+        return;
+      }
+      if (trimmed === current) return; // no change
+
+      try {
+        await update(
+          ref(db, `comments/${candidateId}/${type}/${commentId}`),
+          { text: trimmed }
+        );
+      } catch (err) {
+        console.error(err);
+        alert("Failed to update comment.");
+      }
+    }
+  });
+
+
+</script>
+</body>
+</html>
