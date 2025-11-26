@@ -918,14 +918,25 @@ function render() {
       if (!cm) return;
 
       const current = cm.text || "";
-      const updated = prompt("Edit comment text:", current);
+      const updated = prompt("Edit comment text (leave empty to delete):", current);
       if (updated === null) return; // cancelled
 
       const trimmed = updated.trim();
+
+      // If user cleared the text, offer to delete the comment
       if (!trimmed) {
-        alert("Comment cannot be empty.");
+        const ok = confirm("Text is empty. Delete this comment?");
+        if (!ok) return;
+
+        try {
+          await remove(ref(db, `comments/${candidateId}/${type}/${commentId}`));
+        } catch (err) {
+          console.error(err);
+          alert("Failed to delete comment.");
+        }
         return;
       }
+
       if (trimmed === current) return; // no change
 
       try {
@@ -938,6 +949,7 @@ function render() {
         alert("Failed to update comment.");
       }
     }
+
   });
 
 
