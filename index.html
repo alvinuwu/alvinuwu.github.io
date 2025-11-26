@@ -8,8 +8,27 @@
   <link rel="icon" type="image/png" sizes="32x32" href="Assets/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="Assets/favicon-16x16.png">
   <link rel="stylesheet" href="style.css" />
+<script type="module">
+  import { protectPage } from "./auth.js";
+  protectPage();
+</script>
 
 <body>
+  <!-- Top navigation bar -->
+  <header class="navbar">
+    <div class="nav-inner">
+      <div class="nav-brand"><a href="https://www.wynnvets.org">Returners</a></div>
+      <nav class="nav-links">
+        <!-- Change href="/index.html" if your main board lives somewhere else -->
+        <a href="annihilation.html">Annihilation Guide</a>
+        <a href="recruitment-guide.html">Recruitment Guide</a>
+        <a href="promo.html">Promotion</a>
+        <a href="https://wynnvets.org/discord" target="_blank" rel="noopener">
+          Discord
+        </a>
+      </nav>
+    </div>
+  </header>
 
 
 
