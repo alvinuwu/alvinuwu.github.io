@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Daily Challenge Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="apple-touch-icon" sizes="180x180" href="Assets/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="Assets/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="Assets/favicon-16x16.png">
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<!-- Protect page with your existing auth.js -->
+<script type="module">
+  import { protectPage } from "./auth.js";
+  protectPage();
+</script>
+
+<body>
+  <!-- Top navigation bar -->
+  <header class="navbar">
+    <div class="nav-inner">
+      <div class="nav-brand"><a href="https://www.wynnvets.org">Returners</a></div>
+      <nav class="nav-links">
+        <a href="annihilation.html">Annihilation Guide</a>
+        <a href="recruitment-guide.html">Recruitment Guide</a>
+        <a href="promo.html">Promotion</a>
+        <a href="quiz.html">Daily Challenge</a>
+        <a href="quiz-admin.html">Challenge Admin</a>
+        <a href="https://wynnvets.org/discord" target="_blank" rel="noopener">
+          Discord
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="page">
+    <h1>Daily Challenge Admin</h1>
+    <p class="muted">
+      Unlock days, upload images, set answers, and view all user entries.
+    </p>
+
+    <!-- Day configuration -->
+    <div class="card">
+      <h2>Day Configuration</h2>
+      <div id="dayConfigList" class="table"></div>
+      <p class="muted" id="dayConfigMessage"></p>
+    </div>
+
+    <!-- Entries viewer -->
+    <div class="card">
+      <h2>User Entries</h2>
+
+      <label for="entriesDaySelect">Select day:</label>
+      <select id="entriesDaySelect"></select>
+
+      <div id="entriesTable" class="table" style="margin-top:0.75rem;"></div>
+    </div>
+
+    <!-- Distance calculator -->
+    <div class="card">
+      <h2>Distance Calculator (GeoGuessr-style)</h2>
+      <p class="muted">
+        Select a day and enter coordinates to see distance from the correct answer.
+      </p>
+
+      <form id="distanceForm">
+        <label for="calcDaySelect">Day</label>
+        <select id="calcDaySelect"></select>
+
+        <div class="coord-row">
+          <div>
+            <label for="calcX">X</label>
+            <input id="calcX" type="number" required />
+          </div>
+          <div>
+            <label for="calcY">Y</label>
+            <input id="calcY" type="number" required />
+          </div>
+          <div>
+            <label for="calcZ">Z</label>
+            <input id="calcZ" type="number" required />
+          </div>
+        </div>
+
+        <button type="submit" style="margin-top:0.75rem;">Calculate Distance</button>
+      </form>
+
+      <p id="distanceResult" class="muted" style="margin-top:0.5rem;"></p>
+    </div>
+  </div>
+
+  <!-- Firebase + logic -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getDatabase,
+      ref,
+      onValue,
+      update,
+      set,
+      get
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import {
+      getStorage,
+      ref as storageRef,
+      uploadBytes,
+      getDownloadURL
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBNS9RtaA1vpzwu8jGQ15jgpNN3UYl4rlw",
+      authDomain: "wynnvets.firebaseapp.com",
+      projectId: "wynnvets",
+      storageBucket: "wynnvets.firebasestorage.app",
+      messagingSenderId: "919163929856",
+      appId: "1:919163929856:web:1042d6daa029dc11445fe5",
+      measurementId: "G-KT2LYJ42H5"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getDatabase(app);
+    const storage = getStorage(app);
+
+    const DAY_IDS = ["day1","day2","day3","day4","day5","day6","day7"];
+
+    const dayConfigList   = document.getElementById("dayConfigList");
+    const dayConfigMsg    = document.getElementById("dayConfigMessage");
+
+    const entriesDaySelect = document.getElementById("entriesDaySelect");
+    const entriesTable     = document.getElementById("entriesTable");
+
+    const calcDaySelect = document.getElementById("calcDaySelect");
+    const distanceForm  = document.getElementById("distanceForm");
+    const distanceResult = document.getElementById("distanceResult");
+
+    let daysCache = {};
+    let entriesCache = {}; // entriesCache[dayId] = { usernameKey: entry }
+
+    function usernameKey(name) {
+      return name.toLowerCase().trim().replace(/[.#$/\[\]]/g, "_");
+    }
+
+    // --- Helpers ---
+    function labelForDay(dayId) {
+      const idx = DAY_IDS.indexOf(dayId);
+      return idx === -1 ? dayId : `Day ${idx + 1}`;
+    }
+
+    function distance3D(a, b) {
+      if (!a || !b) return null;
+      const dx = (a.x || 0) - (b.x || 0);
+      const dy = (a.y || 0) - (b.y || 0);
+      const dz = (a.z || 0) - (b.z || 0);
+      return Math.sqrt(dx*dx + dy*dy + dz*dz);
+    }
+
+    // --- Populate selects for days ---
+    function fillDaySelects() {
+      [entriesDaySelect, calcDaySelect].forEach(select => {
+        select.innerHTML = "";
+        DAY_IDS.forEach(dayId => {
+          const opt = document.createElement("option");
+          opt.value = dayId;
+          opt.textContent = labelForDay(dayId);
+          select.appendChild(opt);
+        });
+      });
+    }
+
+    fillDaySelects();
+
+    // --- Day configuration UI ---
+    function renderDayConfig() {
+      dayConfigList.innerHTML = "";
+
+      DAY_IDS.forEach(dayId => {
+        const data = daysCache[dayId] || {};
+        const row = document.createElement("div");
+        row.className = "table-row";
+
+        const unlocked = !!data.unlocked;
+        const answer   = data.answer || {};
+        const imageUrl = data.imageUrl || "";
+
+        row.innerHTML = `
+          <div style="display:flex;flex-direction:column;gap:0.35rem;width:100%;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;">
+              <strong>${labelForDay(dayId)}</strong>
+              <label style="display:flex;align-items:center;gap:0.25rem;">
+                <input type="checkbox" class="day-unlock" data-day="${dayId}" ${unlocked ? "checked" : ""} />
+                <span>Unlocked</span>
+              </label>
+            </div>
+
+            <div style="display:flex;flex-wrap:wrap;gap:1rem;margin-top:0.25rem;">
+              <div>
+                <div class="muted" style="margin-bottom:0.25rem;">Correct Answer (x, y, z)</div>
+                <div class="coord-row">
+                  <input class="answer-x" data-day="${dayId}" type="number" placeholder="X" value="${answer.x ?? ""}" />
+                  <input class="answer-y" data-day="${dayId}" type="number" placeholder="Y" value="${answer.y ?? ""}" />
+                  <input class="answer-z" data-day="${dayId}" type="number" placeholder="Z" value="${answer.z ?? ""}" />
+                </div>
+                <button type="button" class="save-answer" data-day="${dayId}" style="margin-top:0.25rem;">Save Answer</button>
+              </div>
+
+              <div>
+                <div class="muted" style="margin-bottom:0.25rem;">Screenshot</div>
+                <input type="file" accept="image/*" class="image-input" data-day="${dayId}" />
+                <button type="button" class="upload-image" data-day="${dayId}" style="margin-top:0.25rem;">Upload Image</button>
+                <div class="muted" style="max-width:260px;margin-top:0.25rem;">
+                  ${imageUrl ? `Current image set.` : `No image uploaded yet.`}
+                </div>
+              </div>
+
+              <div>
+                ${imageUrl ? `<img src="${imageUrl}" alt="Screenshot ${labelForDay(dayId)}" style="max-width:220px;border-radius:6px;" />` : ""}
+              </div>
+            </div>
+          </div>
+        `;
+
+        dayConfigList.appendChild(row);
+      });
+    }
+
+    // Listen to day changes
+    onValue(ref(db, "days"), (snap) => {
+      daysCache = snap.val() || {};
+      renderDayConfig();
+    });
+
+    // Listen to all entries
+    onValue(ref(db, "entries"), (snap) => {
+      entriesCache = snap.val() || {};
+      renderEntriesTable();
+    });
+
+    // --- Handle interactions in dayConfigList ---
+    dayConfigList.addEventListener("click", async (e) => {
+      const target = e.target;
+      const dayId = target.getAttribute("data-day");
+      if (!dayId) return;
+
+      // Save answer
+      if (target.classList.contains("save-answer")) {
+        const row = target.closest(".table-row") || target.closest("div");
+        const xInput = row.querySelector(`.answer-x[data-day="${dayId}"]`);
+        const yInput = row.querySelector(`.answer-y[data-day="${dayId}"]`);
+        const zInput = row.querySelector(`.answer-z[data-day="${dayId}"]`);
+
+        const x = xInput.value === "" ? null : Number(xInput.value);
+        const y = yInput.value === "" ? null : Number(yInput.value);
+        const z = zInput.value === "" ? null : Number(zInput.value);
+
+        if (x === null || y === null || z === null || Number.isNaN(x) || Number.isNaN(y) || Number.isNaN(z)) {
+          dayConfigMsg.textContent = `Please enter valid numbers for the correct answer of ${labelForDay(dayId)}.`;
+          return;
+        }
+
+        try {
+          await update(ref(db, `days/${dayId}`), {
+            answer: { x, y, z }
+          });
+          dayConfigMsg.textContent = `Saved correct answer for ${labelForDay(dayId)}.`;
+        } catch (err) {
+          console.error(err);
+          dayConfigMsg.textContent = `Failed to save answer for ${labelForDay(dayId)}.`;
+        }
+      }
+
+      // Upload image
+      if (target.classList.contains("upload-image")) {
+        const row = target.closest(".table-row") || target.closest("div");
+        const fileInput = row.querySelector(`.image-input[data-day="${dayId}"]`);
+        const file = fileInput?.files?.[0];
+        if (!file) {
+          dayConfigMsg.textContent = `Please select an image file for ${labelForDay(dayId)}.`;
+          return;
+        }
+
+        try {
+          const fileRef = storageRef(storage, `daily-challenge/${dayId}.png`);
+          await uploadBytes(fileRef, file);
+          const url = await getDownloadURL(fileRef);
+
+          await update(ref(db, `days/${dayId}`), {
+            imageUrl: url
+          });
+
+          dayConfigMsg.textContent = `Image uploaded for ${labelForDay(dayId)}.`;
+        } catch (err) {
+          console.error(err);
+          dayConfigMsg.textContent = `Failed to upload image for ${labelForDay(dayId)}.`;
+        }
+      }
+    });
+
+    // Unlock toggle (change event)
+    dayConfigList.addEventListener("change", async (e) => {
+      const target = e.target;
+      if (!target.classList.contains("day-unlock")) return;
+      const dayId = target.getAttribute("data-day");
+      if (!dayId) return;
+
+      const unlocked = target.checked;
+      try {
+        await update(ref(db, `days/${dayId}`), { unlocked });
+        dayConfigMsg.textContent = `${labelForDay(dayId)} has been ${unlocked ? "unlocked" : "locked"}.`;
+      } catch (err) {
+        console.error(err);
+        dayConfigMsg.textContent = `Failed to change lock state for ${labelForDay(dayId)}.`;
+      }
+    });
+
+    // --- Entries table ---
+    function renderEntriesTable() {
+      const dayId = entriesDaySelect.value || DAY_IDS[0];
+      const entriesForDay = entriesCache[dayId] || {};
+      const dayData = daysCache[dayId] || {};
+      const answer = dayData.answer || null;
+
+      entriesTable.innerHTML = "";
+
+      const keys = Object.keys(entriesForDay);
+      if (keys.length === 0) {
+        entriesTable.innerHTML = '<div class="no-data">No entries yet for this day.</div>';
+        return;
+      }
+
+      const header = document.createElement("div");
+      header.className = "table-header";
+      header.innerHTML = `
+        <div>Username</div>
+        <div>Coordinates (x, y, z)</div>
+        <div>Distance to Answer</div>
+        <div>Last Updated</div>
+      `;
+      entriesTable.appendChild(header);
+
+      keys.forEach(k => {
+        const entry = entriesForDay[k];
+        const row = document.createElement("div");
+        row.className = "table-row";
+
+        const entryCoord = { x: entry.x, y: entry.y, z: entry.z };
+        const dist = answer ? distance3D(entryCoord, answer) : null;
+
+        row.innerHTML = `
+          <div>${entry.username || "(unknown)"}</div>
+          <div>${entry.x}, ${entry.y}, ${entry.z}</div>
+          <div>${answer ? (dist?.toFixed(2) + " blocks") : "No answer set"}</div>
+          <div>${entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : ""}</div>
+        `;
+
+        entriesTable.appendChild(row);
+      });
+    }
+
+    entriesDaySelect.addEventListener("change", () => {
+      renderEntriesTable();
+    });
+
+    // --- Distance calculator ---
+    distanceForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const dayId = calcDaySelect.value;
+
+      const x = Number(document.getElementById("calcX").value);
+      const y = Number(document.getElementById("calcY").value);
+      const z = Number(document.getElementById("calcZ").value);
+
+      if ([x,y,z].some(v => Number.isNaN(v))) {
+        distanceResult.textContent = "Please enter valid numbers.";
+        return;
+      }
+
+      try {
+        const snap = await get(ref(db, `days/${dayId}/answer`));
+        const ans = snap.val();
+        if (!ans || ans.x === undefined || ans.y === undefined || ans.z === undefined) {
+          distanceResult.textContent = `No correct answer set for ${labelForDay(dayId)}.`;
+          return;
+        }
+
+        const d = distance3D({ x, y, z }, ans);
+        distanceResult.textContent =
+          `Distance from correct answer for ${labelForDay(dayId)}: ${d.toFixed(2)} blocks.`;
+      } catch (err) {
+        console.error(err);
+        distanceResult.textContent = "Failed to fetch correct answer.";
+      }
+    });
+
+    // Initial render
+    renderEntriesTable();
+  </script>
+</body>
+</html>
