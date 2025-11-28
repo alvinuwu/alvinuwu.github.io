@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Daily Coordinate Challenge</title>
+  <title>Weekly Return XX</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="apple-touch-icon" sizes="180x180" href="Assets/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="Assets/favicon-32x32.png">
@@ -11,11 +11,9 @@
 </head>
 
 <body>
-
-
   <div class="page">
-    <h1>Daily Coordinate Challenge</h1>
-    <p class="muted">Answer each day’s challenge by guessing the Minecraft coordinates.</p>
+    <h1>Weekly Return XX</h1>
+    <p class="muted">Answer each day's challenge by guessing the Minecraft coordinates.</p>
 
     <!-- Tabs for 7 days -->
     <div id="dayTabs" class="tab-row"></div>
@@ -30,12 +28,16 @@
 
       <div id="dayContent" style="display:none;">
         <div class="screenshot-container">
-          <img id="dayImage" alt="Day screenshot" style="max-width:100%;border-radius:8px;" />
+        <img id="dayImage" alt="Day screenshot" />
         </div>
+
+        <p class="warning-text">
+          ⚠️ Once you submit, your answer for this day is final and <strong>cannot be changed.</strong>
+        </p>
 
         <form id="entryForm" style="margin-top:1rem;">
           <label for="usernameInput">Minecraft Username</label>
-          <input id="usernameInput" name="username" required placeholder="e.g. CoolPlayer123" />
+          <input id="usernameInput" name="username" required placeholder="e.g. Bob_123" />
 
           <div class="coord-row">
             <div>
@@ -51,8 +53,9 @@
               <input id="coordZ" name="z" type="number" required />
             </div>
           </div>
+          <br>
 
-          <button type="submit" style="margin-top:0.75rem;">Submit / Overwrite Answer</button>
+        <button type="submit" class="submit-button">Submit</button>
         </form>
 
         <p class="muted" id="entryMessage" style="margin-top:0.5rem;"></p>
@@ -67,10 +70,10 @@
       getDatabase,
       ref,
       onValue,
-      set
+      set,
+      get
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-    // Same config as promo.html
     const firebaseConfig = {
       apiKey: "AIzaSyBNS9RtaA1vpzwu8jGQ15jgpNN3UYl4rlw",
       authDomain: "wynnvets.firebaseapp.com",
@@ -117,9 +120,17 @@
         btn.textContent = "Day " + (idx + 1);
         btn.dataset.dayId = dayId;
         btn.addEventListener("click", () => {
-          activeDayId = dayId;
-          renderTabs();
-          renderDay();
+        if (activeDayId === dayId) return; // clicking the same tab, do nothing
+
+        activeDayId = dayId;
+        renderTabs();
+        renderDay();
+
+        // Clear ONLY coordinates, keep username
+        coordXInput.value = "";
+        coordYInput.value = "";
+        coordZInput.value = "";
+        entryMessage.textContent = "";
         });
         dayTabsEl.appendChild(btn);
       });
@@ -180,6 +191,14 @@
       const entryRef = ref(db, `entries/${activeDayId}/${key}`);
 
       try {
+        // 1️⃣ Check if an entry already exists for this username & day
+        const snap = await get(entryRef);
+        if (snap.exists()) {
+          entryMessage.textContent = "You cannot change your answer after submission.";
+          return;
+        }
+
+        // 2️⃣ First-time submission: save it
         await set(entryRef, {
           username,
           x,
@@ -187,16 +206,131 @@
           z,
           updatedAt: Date.now()
         });
-        entryMessage.textContent = "Answer saved! If you had a previous answer for this day, it has been overwritten.";
+
+        entryMessage.textContent = "Answer saved! This answer is final and cannot be changed.";
+
+        // Optional: disable inputs so the user sees it's locked
+        entryForm.querySelector("button[type='submit']").disabled = true;
+        usernameInput.disabled = true;
+        coordXInput.disabled = true;
+        coordYInput.disabled = true;
+        coordZInput.disabled = true;
       } catch (err) {
         console.error(err);
         entryMessage.textContent = "Failed to save. Please try again.";
       }
     });
 
+
     // Initial UI
     renderTabs();
     renderDay();
   </script>
 </body>
+
+<style>
+    .warning-text {
+      background: rgba(255, 230, 0, 0.25);
+      border-left: 4px solid #eab308; /* yellow-600 */
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+      color: #854d0e; /* amber-800 */
+    }
+
+    /* Side-by-side XYZ inputs */
+    .coord-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+    justify-content: flex-start;
+    }
+
+    .coord-row > div {
+    width: 110px; /* <<< make each input a fixed small size */
+    }
+
+    /* Label above input */
+    .coord-row label {
+    font-size: 0.8rem;
+    color: #555;
+    margin-bottom: 2px;
+    }
+
+    /* Input styling */
+    .coord-row input {
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(148,163,184,0.45);
+    font-size: 0.85rem; /* smaller text */
+    }
+
+    #usernameInput {
+    width: 352px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(148,163,184,0.45);
+    font-size: 0.9rem;
+    }
+
+    .submit-button:hover {
+    background: #1d4ed8;
+    }
+
+    .screenshot-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    margin-bottom: 16px;
+    }
+
+    #dayImage {
+    width: 100%;
+    max-width: 900px; /* you can increase this */
+    border-radius: 12px;
+    object-fit: cover;
+    display: block;
+    }
+
+    /* Navigation bar container */
+    #dayTabs {
+    display: flex;
+    gap: 0.5rem;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.6);
+    backdrop-filter: blur(12px);
+    border-radius: 14px;
+    margin-bottom: 16px;
+    border: 1px solid rgba(0,0,0,0.1);
+    overflow-x: auto;
+    }
+
+    /* Each nav tab */
+    .tab-button {
+    background: transparent;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    color: #475569; /* slate-600 */
+    transition: 0.15s ease;
+    }
+
+    /* Hover effect */
+    .tab-button:hover {
+    background: rgba(37,99,235,0.1); /* soft blue tint */
+    color: #1e3a8a; /* darker blue */
+    }
+
+    /* Active tab */
+    .tab-button-active {
+    background: #2563eb; /* blue */
+    color: white !important;
+    box-shadow: 0 4px 10px rgba(37,99,235,0.25);
+    }
+</style>
 </html>
