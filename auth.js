@@ -9,6 +9,7 @@ async function sha256(message) {
 }
 
 // === CONFIG ===
+// SHA256
 const PASSWORD_HASH =
   "781a214bbdbeff92f8cdd84d07aaade538be092af67ae8459588ea33241f7042";
 
@@ -37,7 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (hash === PASSWORD_HASH) {
         sessionStorage.setItem(STORAGE_KEY, "1");
         // redirect to your main page
-        console.log("✔ Login successful — redirecting now...");
+        console.log("✔ Login successful - redirecting now...");
         window.location.href = "return_week_xx_admin.html";
       } else {
         errorEl.textContent = "Incorrect password.";
