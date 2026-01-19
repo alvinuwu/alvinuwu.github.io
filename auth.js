@@ -39,7 +39,7 @@ document.addEventListener("DOMContentLoaded", () => {
         sessionStorage.setItem(STORAGE_KEY, "1");
         // redirect to your main page
         console.log("✔ Login successful - redirecting now...");
-        window.location.href = "return_week_xx_admin.html";
+        window.location.href = "return_week_56_admin.html";
       } else {
         errorEl.textContent = "Incorrect password.";
       }
