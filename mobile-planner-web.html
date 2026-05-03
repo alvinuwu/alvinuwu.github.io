@@ -497,6 +497,41 @@
       update
     } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-database.js";
 
+    const PASSWORD_HASH = "244b8435061420f6b2887681bbe2d24b18fc8f790a75c5bf16937bb8417e651a";
+
+    async function sha256(value) {
+      const bytes = new TextEncoder().encode(value);
+      const hash = await crypto.subtle.digest("SHA-256", bytes);
+      return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function unlockPlanner(event) {
+      event.preventDefault();
+      const input = document.getElementById("passwordInput");
+      const error = document.getElementById("lockError");
+      const enteredHash = await sha256(input.value);
+      if (enteredHash !== PASSWORD_HASH) {
+        error.textContent = "Wrong password.";
+        input.value = "";
+        input.focus();
+        return;
+      }
+
+      sessionStorage.setItem("plannerUnlocked", "true");
+      document.body.classList.remove("locked");
+      document.getElementById("lockScreen").hidden = true;
+      startPlanner();
+    }
+
+    document.getElementById("lockForm").addEventListener("submit", unlockPlanner);
+
+    if (sessionStorage.getItem("plannerUnlocked") === "true") {
+      document.body.classList.remove("locked");
+      document.getElementById("lockScreen").hidden = true;
+      startPlanner();
+    }
+
+    function startPlanner() {
     const firebaseConfig = {
       apiKey: "AIzaSyCfHvC65Y6EqW5ladFu3b5DhAvEUYHVcA4",
       authDomain: "my-calendar-ce46e.firebaseapp.com",
@@ -921,6 +956,7 @@
     });
     window.addEventListener("beforeunload", () => off(ref(db)));
     render();
+    }
   </script>
 </body>
 </html>
