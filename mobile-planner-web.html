@@ -1,0 +1,926 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Planner</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      background: #f3f0ea;
+      color: #1f2421;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input, select, textarea { font: inherit; }
+    button { user-select: none; }
+    .app {
+      min-height: 100vh;
+      padding: max(16px, env(safe-area-inset-top)) 14px max(24px, env(safe-area-inset-bottom));
+      display: flex;
+      flex-direction: column;
+    }
+    .topbar { order: 0; }
+    .overall-panel { order: 1; }
+    .daily-panel { order: 2; }
+    .weekbar { order: 3; }
+    .today-panel { order: 4; }
+    .selected-panel { order: 5; }
+    .editor-panel { order: 6; }
+    .repeatable-panel { order: 7; }
+    .birthday-panel { order: 8; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .eyebrow {
+      color: #66706a;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0;
+      margin: 0 0 4px;
+      text-transform: uppercase;
+    }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 34px; line-height: 1; }
+    h2 { font-size: 18px; }
+    .sync-pill {
+      border: 1px solid #c9ddce;
+      background: #edf5ef;
+      border-radius: 999px;
+      color: #315b4d;
+      font-size: 12px;
+      font-weight: 900;
+      padding: 8px 10px;
+      white-space: nowrap;
+    }
+    .panel {
+      background: #fffdf8;
+      border: 1px solid #ded7cc;
+      border-radius: 8px;
+      box-shadow: 0 12px 30px rgba(50, 45, 36, 0.06);
+      margin-bottom: 12px;
+      padding: 14px;
+    }
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .panel-title span {
+      color: #66706a;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .weekbar {
+      display: grid;
+      gap: 10px;
+    }
+    .week-actions, .tabs, .category-tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .week-actions button, .tab, .category-tab, .small-button, .remove-button {
+      border: 1px solid #cfc8bb;
+      border-radius: 8px;
+      background: #fffdf8;
+      color: #364039;
+      cursor: pointer;
+      font-weight: 800;
+      min-height: 38px;
+      padding: 8px 11px;
+      white-space: nowrap;
+    }
+    .tab {
+      min-width: 62px;
+      display: grid;
+      gap: 2px;
+      justify-items: center;
+    }
+    .tab small {
+      color: #737b75;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .tab.active, .category-tab.active {
+      background: #1f2421;
+      border-color: #1f2421;
+      color: #ffffff;
+    }
+    .tab.active small { color: #ffffff; }
+    .day-add {
+      width: 100%;
+      border: 0;
+      border-radius: 8px;
+      background: #2f7d6b;
+      color: #ffffff;
+      cursor: pointer;
+      font-weight: 900;
+      min-height: 44px;
+      margin-top: 10px;
+    }
+    .today-strip {
+      display: grid;
+      gap: 8px;
+    }
+    .today-item, .event-card, .task-row, .repeatable-row, .birthday-row {
+      border: 1px solid #e3ded4;
+      border-radius: 8px;
+      background: #ffffff;
+    }
+    .today-item {
+      display: grid;
+      gap: 3px;
+      min-height: 56px;
+      padding: 10px 12px;
+    }
+    .today-item span, .event-time, .event-category, .birthday-row span, .repeatable-row span {
+      color: #66706a;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .work-summary {
+      background: #edf5ef;
+      border-color: #c9ddce;
+    }
+    .birthday-summary {
+      background: #fff4e8;
+      border-color: #e6c7a7;
+    }
+    .day-events {
+      display: grid;
+      gap: 8px;
+    }
+    .event-card {
+      width: 100%;
+      border-left: 5px solid #2f7d6b;
+      color: inherit;
+      cursor: pointer;
+      display: grid;
+      gap: 4px;
+      padding: 10px 11px;
+      text-align: left;
+    }
+    .event-card strong {
+      font-size: 16px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .event-notes {
+      color: #525a54;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .task-input, .birthday-input {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .task-input.two {
+      grid-template-columns: 1fr auto;
+    }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid #d7d0c4;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #1f2421;
+      min-height: 44px;
+      padding: 10px 11px;
+    }
+    textarea {
+      min-height: 88px;
+      resize: vertical;
+    }
+    .task-list, .repeatable-list, .birthday-list {
+      display: grid;
+      gap: 8px;
+    }
+    .task-row {
+      min-height: 42px;
+      display: grid;
+      grid-template-columns: 34px 1fr 30px;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+    }
+    .check {
+      width: 22px;
+      height: 22px;
+      accent-color: #2f7d6b;
+      cursor: pointer;
+    }
+    .task-done {
+      color: #8b908c;
+      text-decoration: line-through;
+    }
+    .remove-button {
+      min-height: 30px;
+      padding: 4px 8px;
+      color: #8c4a4a;
+    }
+    .remove-x {
+      border: 0;
+      background: transparent;
+      color: #8c4a4a;
+      cursor: pointer;
+      font-size: 22px;
+      line-height: 1;
+    }
+    .form-grid {
+      display: grid;
+      gap: 10px;
+    }
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    label {
+      color: #404841;
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .primary-button, .danger-button {
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 900;
+      min-height: 46px;
+    }
+    .primary-button {
+      border: 0;
+      background: #2f7d6b;
+      color: #ffffff;
+    }
+    .danger-button {
+      border: 1px solid #d9a5a6;
+      background: #ffffff;
+      color: #a12d2f;
+    }
+    .repeatable-row, .birthday-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 10px;
+      align-items: center;
+      padding: 10px;
+    }
+    .repeatable-row div, .birthday-row div {
+      display: grid;
+      gap: 3px;
+    }
+    .empty {
+      color: #7d837e;
+      font-size: 14px;
+      padding: 8px 0;
+    }
+    .lock-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      background: #f3f0ea;
+      display: grid;
+      align-items: center;
+      padding: 18px;
+    }
+    .lock-card {
+      width: min(100%, 420px);
+      margin: 0 auto;
+      background: #fffdf8;
+      border: 1px solid #ded7cc;
+      border-radius: 8px;
+      box-shadow: 0 12px 30px rgba(50, 45, 36, 0.08);
+      display: grid;
+      gap: 12px;
+      padding: 18px;
+    }
+    .lock-card h1 {
+      font-size: 30px;
+    }
+    .lock-error {
+      color: #a12d2f;
+      font-size: 13px;
+      font-weight: 800;
+      min-height: 18px;
+    }
+    body.locked .app {
+      visibility: hidden;
+    }
+    @media (min-width: 760px) {
+      .app {
+        max-width: 760px;
+        margin: 0 auto;
+        padding-left: 24px;
+        padding-right: 24px;
+      }
+      .task-input { grid-template-columns: 1fr auto auto; }
+      .birthday-input { grid-template-columns: 1fr 170px auto; }
+    }
+  </style>
+</head>
+<body class="locked">
+  <section class="lock-screen" id="lockScreen">
+    <form class="lock-card" id="lockForm">
+      <div>
+        <p class="eyebrow">Private planner</p>
+        <h1>Planner</h1>
+      </div>
+      <input id="passwordInput" type="password" autocomplete="current-password" placeholder="Password" />
+      <button class="primary-button" type="submit">Unlock</button>
+      <p class="lock-error" id="lockError"></p>
+    </form>
+  </section>
+
+  <main class="app">
+    <section class="topbar">
+      <div>
+        <p class="eyebrow">Personal planner</p>
+        <h1>Planner</h1>
+      </div>
+      <div class="sync-pill" id="syncStatus">Connecting</div>
+    </section>
+
+    <section class="panel weekbar">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">Calendar</p>
+          <h2 id="weekLabel">This week</h2>
+        </div>
+      </div>
+      <div class="week-actions">
+        <button id="previousWeek">Previous</button>
+        <button id="todayWeek">Today</button>
+        <button id="nextWeek">Next</button>
+      </div>
+      <div class="tabs" id="dayTabs"></div>
+      <button class="day-add" id="newPlanButton">Add plan for this day</button>
+    </section>
+
+    <section class="panel today-panel">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">Today</p>
+          <h2 id="todayLabel">Today</h2>
+        </div>
+      </div>
+      <div class="today-strip" id="todayList"></div>
+    </section>
+
+    <section class="panel selected-panel">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">Selected day</p>
+          <h2 id="selectedDayLabel">Plans</h2>
+        </div>
+        <span id="selectedCount">0 plans</span>
+      </div>
+      <div class="day-events" id="dayEvents"></div>
+    </section>
+
+    <section class="panel daily-panel">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">Daily To Do</p>
+          <h2 id="dailyTaskLabel">Tasks</h2>
+        </div>
+        <span id="dailyOpenCount">0 open</span>
+      </div>
+      <div class="task-input two">
+        <input id="dailyTaskText" placeholder="Add a task for this day" />
+        <button class="small-button" id="addDailyTask">Add</button>
+      </div>
+      <div class="task-list" id="dailyTaskList"></div>
+    </section>
+
+    <section class="panel overall-panel">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">Overall To Do</p>
+          <h2>Open loop list</h2>
+        </div>
+        <span id="globalOpenCount">0 open</span>
+      </div>
+      <div class="task-input two">
+        <input id="globalTaskText" placeholder="Add an overall task" />
+        <button class="small-button" id="addGlobalTask">Add</button>
+      </div>
+      <div class="task-list" id="globalTaskList"></div>
+    </section>
+
+    <section class="panel editor-panel">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">Plan Editor</p>
+          <h2 id="editorTitle">New plan</h2>
+        </div>
+        <button class="small-button" id="clearPlan">Clear</button>
+      </div>
+      <div class="form-grid">
+        <label>Title
+          <input id="planTitle" />
+        </label>
+        <div class="field-row">
+          <label>Start
+            <input id="planStart" value="09:00" />
+          </label>
+          <label>End
+            <input id="planEnd" value="10:00" />
+          </label>
+        </div>
+        <label>Day
+          <select id="planDay"></select>
+        </label>
+        <label>Category
+          <select id="planCategory"></select>
+        </label>
+        <label>Notes
+          <textarea id="planNotes"></textarea>
+        </label>
+        <button class="primary-button" id="savePlan">Save plan</button>
+        <button class="danger-button" id="deletePlan" hidden>Delete plan</button>
+      </div>
+    </section>
+
+    <section class="panel repeatable-panel">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">Repeatable Tasks</p>
+          <h2>Quick add library</h2>
+        </div>
+        <span id="repeatableCount">0 saved</span>
+      </div>
+      <div class="task-input">
+        <input id="repeatableText" placeholder="Add a reusable task, like Run" />
+        <select id="repeatableCategory"></select>
+        <button class="small-button" id="addRepeatable">Save</button>
+      </div>
+      <div class="repeatable-list" id="repeatableList"></div>
+    </section>
+
+    <section class="panel birthday-panel">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">Birthdays</p>
+          <h2>People to remember</h2>
+        </div>
+        <span id="birthdayCount">0 saved</span>
+      </div>
+      <div class="birthday-input">
+        <input id="birthdayName" placeholder="Name" />
+        <input id="birthdayDate" type="date" />
+        <button class="small-button" id="addBirthday">Add birthday</button>
+      </div>
+      <div class="birthday-list" id="birthdayList"></div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
+    import {
+      getDatabase,
+      off,
+      onValue,
+      push,
+      ref,
+      remove,
+      serverTimestamp,
+      set,
+      update
+    } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCfHvC65Y6EqW5ladFu3b5DhAvEUYHVcA4",
+      authDomain: "my-calendar-ce46e.firebaseapp.com",
+      databaseURL: "https://my-calendar-ce46e-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "my-calendar-ce46e",
+      storageBucket: "my-calendar-ce46e.firebasestorage.app",
+      messagingSenderId: "314969891926",
+      appId: "1:314969891926:web:78760ac222b80387cc47f7"
+    };
+
+    const categories = [
+      { name: "Personal", color: "#2f7d6b" },
+      { name: "Work", color: "#567c5f" },
+      { name: "Study", color: "#8a5a20" },
+      { name: "Health", color: "#9a3d55" }
+    ];
+    const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const workColor = "#d9e7df";
+    const birthdayColor = "#c98b4a";
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    let events = [];
+    let tasks = [];
+    let globalTasks = [];
+    let repeatableTasks = [];
+    let birthdays = [];
+    let weekStart = startOfWeek(new Date());
+    let selectedIso = toIsoDate(new Date());
+    let selectedDay = dayNames[(new Date().getDay() + 6) % 7];
+    let formId = "";
+
+    const el = (id) => document.getElementById(id);
+
+    function startOfWeek(date) {
+      const copy = new Date(date);
+      const day = copy.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      copy.setDate(copy.getDate() + diff);
+      copy.setHours(0, 0, 0, 0);
+      return copy;
+    }
+    function addDays(date, amount) {
+      const copy = new Date(date);
+      copy.setDate(copy.getDate() + amount);
+      return copy;
+    }
+    function toIsoDate(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+    function parseIso(date) {
+      return new Date(`${date}T00:00:00`);
+    }
+    function formatShortDate(date) {
+      return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+    function formatLongDate(date) {
+      return date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    }
+    function monthDay(date) {
+      return date.slice(5);
+    }
+    function weekDays() {
+      return dayNames.map((day, index) => {
+        const date = addDays(weekStart, index);
+        return { day, date, iso: toIsoDate(date) };
+      });
+    }
+    function itemList(value) {
+      return Object.entries(value || {}).map(([id, item]) => ({ id, ...item }));
+    }
+    function categoryFor(name) {
+      return categories.find((item) => item.name === name) || categories[0];
+    }
+    function selectedDateInfo() {
+      return weekDays().find((item) => item.iso === selectedIso) || weekDays()[0];
+    }
+    function selectedEvents() {
+      const info = selectedDateInfo();
+      const saved = events
+        .filter((event) => event.date ? event.date === info.iso : event.day === info.day)
+        .sort((a, b) => a.startTime.localeCompare(b.startTime));
+      const birthdayEvents = birthdays
+        .filter((birthday) => monthDay(birthday.date) === monthDay(info.iso))
+        .map((birthday) => ({
+          id: `birthday-${birthday.id}-${info.iso}`,
+          title: `${birthday.name}'s birthday`,
+          day: info.day,
+          date: info.iso,
+          startTime: "06:00",
+          endTime: "06:45",
+          category: "Birthday",
+          color: birthdayColor,
+          notes: ""
+        }));
+      const index = dayNames.indexOf(info.day);
+      const workBlock = index < 5 ? [{
+        id: `work-${info.iso}`,
+        title: "Work",
+        day: info.day,
+        date: info.iso,
+        startTime: "08:30",
+        endTime: "18:00",
+        category: "Work",
+        color: workColor,
+        notes: ""
+      }] : [];
+      return [...birthdayEvents, ...workBlock, ...saved].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    }
+    function render() {
+      const days = weekDays();
+      const todayIso = toIsoDate(new Date());
+      const info = selectedDateInfo();
+      el("weekLabel").textContent = `${formatShortDate(weekStart)} - ${formatShortDate(addDays(weekStart, 6))}`;
+      el("todayLabel").textContent = formatLongDate(new Date());
+      el("selectedDayLabel").textContent = formatLongDate(parseIso(info.iso));
+      el("dailyTaskLabel").textContent = formatShortDate(parseIso(info.iso));
+      el("dayTabs").innerHTML = "";
+      el("planDay").innerHTML = "";
+
+      for (const day of days) {
+        const tab = document.createElement("button");
+        tab.className = `tab${day.iso === selectedIso ? " active" : ""}`;
+        tab.innerHTML = `<strong>${day.day}</strong><small>${formatShortDate(day.date)}</small>`;
+        tab.addEventListener("click", () => {
+          selectedIso = day.iso;
+          selectedDay = day.day;
+          clearForm(day);
+          render();
+        });
+        el("dayTabs").appendChild(tab);
+
+        const option = document.createElement("option");
+        option.value = day.iso;
+        option.textContent = `${day.day}, ${formatShortDate(day.date)}`;
+        option.selected = day.iso === selectedIso;
+        el("planDay").appendChild(option);
+      }
+
+      const todayBirthdays = birthdays.filter((birthday) => monthDay(birthday.date) === monthDay(todayIso));
+      const todayPlans = events.filter((event) => event.date === todayIso).sort((a, b) => a.startTime.localeCompare(b.startTime));
+      el("todayList").innerHTML = "";
+      for (const birthday of todayBirthdays) addTodayItem("Birthday", birthday.name, "birthday-summary");
+      addTodayItem("08:30 - 18:00", "Work", "work-summary");
+      for (const event of todayPlans) addTodayItem(`${event.startTime} - ${event.endTime}`, event.title, "");
+
+      const plans = selectedEvents();
+      el("selectedCount").textContent = `${plans.length} plans`;
+      el("dayEvents").innerHTML = plans.length ? "" : `<p class="empty">Nothing planned for this day yet.</p>`;
+      for (const event of plans) {
+        const button = document.createElement("button");
+        button.className = "event-card";
+        button.style.borderLeftColor = event.color || "#2f7d6b";
+        button.innerHTML = `
+          <span class="event-time">${event.startTime} - ${event.endTime}</span>
+          <strong>${escapeHtml(event.title)}</strong>
+          <span class="event-category">${escapeHtml(event.category || "Personal")}</span>
+          ${event.notes ? `<span class="event-notes">${escapeHtml(event.notes)}</span>` : ""}
+        `;
+        button.addEventListener("click", () => editEvent(event));
+        el("dayEvents").appendChild(button);
+      }
+
+      renderTasks("dailyTaskList", tasks.filter((task) => (task.date || todayIso) === info.iso), toggleDailyTask, deleteDailyTask);
+      el("dailyOpenCount").textContent = `${tasks.filter((task) => (task.date || todayIso) === info.iso && !task.done).length} open`;
+      renderTasks("globalTaskList", globalTasks, toggleGlobalTask, deleteGlobalTask);
+      el("globalOpenCount").textContent = `${globalTasks.filter((task) => !task.done).length} open`;
+      renderRepeatables();
+      renderBirthdays();
+    }
+    function addTodayItem(meta, title, className) {
+      const div = document.createElement("div");
+      div.className = `today-item ${className}`;
+      div.innerHTML = `<span>${escapeHtml(meta)}</span><strong>${escapeHtml(title)}</strong>`;
+      el("todayList").appendChild(div);
+    }
+    function renderTasks(targetId, list, onToggle, onDelete) {
+      const target = el(targetId);
+      target.innerHTML = list.length ? "" : `<p class="empty">No tasks here yet.</p>`;
+      for (const task of list) {
+        const row = document.createElement("div");
+        row.className = "task-row";
+        row.innerHTML = `
+          <input class="check" type="checkbox" ${task.done ? "checked" : ""} aria-label="Toggle task" />
+          <span class="${task.done ? "task-done" : ""}">${escapeHtml(task.text)}</span>
+          <button class="remove-x" aria-label="Remove task">x</button>
+        `;
+        row.querySelector(".check").addEventListener("change", () => onToggle(task));
+        row.querySelector(".remove-x").addEventListener("click", () => onDelete(task.id));
+        target.appendChild(row);
+      }
+    }
+    function renderRepeatables() {
+      el("repeatableCount").textContent = `${repeatableTasks.length} saved`;
+      el("repeatableList").innerHTML = repeatableTasks.length ? "" : `<p class="empty">No repeatable tasks saved yet.</p>`;
+      for (const task of repeatableTasks) {
+        const row = document.createElement("div");
+        row.className = "repeatable-row";
+        row.innerHTML = `
+          <div><strong>${escapeHtml(task.text)}</strong><span>${escapeHtml(task.category || "Personal")}</span></div>
+          <button class="remove-button">Remove</button>
+        `;
+        row.querySelector("div").addEventListener("click", () => addRepeatableToPlan(task));
+        row.querySelector(".remove-button").addEventListener("click", () => remove(ref(db, `repeatableTasks/${task.id}`)));
+        el("repeatableList").appendChild(row);
+      }
+    }
+    function renderBirthdays() {
+      el("birthdayCount").textContent = `${birthdays.length} saved`;
+      el("birthdayList").innerHTML = birthdays.length ? "" : `<p class="empty">No birthdays saved yet.</p>`;
+      const sorted = birthdays.slice().sort((a, b) => monthDay(a.date).localeCompare(monthDay(b.date)));
+      for (const birthday of sorted) {
+        const row = document.createElement("div");
+        row.className = "birthday-row";
+        row.innerHTML = `
+          <div><strong>${escapeHtml(birthday.name)}</strong><span>${formatLongDate(parseIso(birthday.date))}</span></div>
+          <button class="remove-button">Remove</button>
+        `;
+        row.querySelector(".remove-button").addEventListener("click", () => remove(ref(db, `birthdays/${birthday.id}`)));
+        el("birthdayList").appendChild(row);
+      }
+    }
+    function populateCategories() {
+      for (const target of [el("planCategory"), el("repeatableCategory")]) {
+        target.innerHTML = "";
+        for (const category of categories) {
+          const option = document.createElement("option");
+          option.value = category.name;
+          option.textContent = category.name;
+          target.appendChild(option);
+        }
+      }
+    }
+    function formPayload() {
+      const date = selectedDateInfo();
+      const category = categoryFor(el("planCategory").value);
+      return {
+        title: el("planTitle").value.trim(),
+        day: date.day,
+        date: date.iso,
+        startTime: el("planStart").value || "09:00",
+        endTime: el("planEnd").value || "10:00",
+        category: category.name,
+        color: category.color,
+        notes: el("planNotes").value.trim()
+      };
+    }
+    function clearForm(day = selectedDateInfo()) {
+      formId = "";
+      selectedIso = day.iso;
+      selectedDay = day.day;
+      el("editorTitle").textContent = "New plan";
+      el("planTitle").value = "";
+      el("planStart").value = "09:00";
+      el("planEnd").value = "10:00";
+      el("planCategory").value = "Personal";
+      el("planNotes").value = "";
+      el("deletePlan").hidden = true;
+    }
+    function editEvent(event) {
+      if (event.id.startsWith("work-") || event.id.startsWith("birthday-")) return;
+      formId = event.id;
+      selectedIso = event.date || selectedIso;
+      selectedDay = event.day;
+      el("editorTitle").textContent = "Edit plan";
+      el("planTitle").value = event.title || "";
+      el("planStart").value = event.startTime || "09:00";
+      el("planEnd").value = event.endTime || "10:00";
+      el("planCategory").value = event.category || "Personal";
+      el("planNotes").value = event.notes || "";
+      el("deletePlan").hidden = false;
+      render();
+      el("planTitle").focus();
+    }
+    async function savePlan() {
+      const payload = formPayload();
+      if (!payload.title) return;
+      if (formId) await update(ref(db, `events/${formId}`), { ...payload, updatedAt: serverTimestamp() });
+      else await set(push(ref(db, "events")), { ...payload, createdAt: serverTimestamp() });
+      clearForm(selectedDateInfo());
+    }
+    async function addRepeatableToPlan(task) {
+      const category = categoryFor(task.category || "Personal");
+      const info = selectedDateInfo();
+      await set(push(ref(db, "events")), {
+        title: task.text,
+        day: info.day,
+        date: info.iso,
+        startTime: el("planStart").value || "09:00",
+        endTime: el("planEnd").value || "10:00",
+        category: category.name,
+        color: category.color,
+        notes: "",
+        createdAt: serverTimestamp()
+      });
+    }
+    async function addTask(path, text, extra = {}) {
+      const value = text.trim();
+      if (!value) return;
+      await set(push(ref(db, path)), { text: value, done: false, ...extra, createdAt: serverTimestamp() });
+    }
+    function toggleDailyTask(task) {
+      update(ref(db, `tasks/${task.id}`), { text: task.text, done: !task.done, date: task.date || selectedIso, updatedAt: serverTimestamp() });
+    }
+    function toggleGlobalTask(task) {
+      update(ref(db, `globalTasks/${task.id}`), { text: task.text, done: !task.done, updatedAt: serverTimestamp() });
+    }
+    function deleteDailyTask(id) {
+      remove(ref(db, `tasks/${id}`));
+    }
+    function deleteGlobalTask(id) {
+      remove(ref(db, `globalTasks/${id}`));
+    }
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      }[char]));
+    }
+
+    populateCategories();
+    clearForm(selectedDateInfo());
+
+    el("previousWeek").addEventListener("click", () => {
+      weekStart = addDays(weekStart, -7);
+      clearForm(weekDays()[0]);
+      render();
+    });
+    el("todayWeek").addEventListener("click", () => {
+      weekStart = startOfWeek(new Date());
+      const today = weekDays().find((day) => day.iso === toIsoDate(new Date())) || weekDays()[0];
+      clearForm(today);
+      render();
+    });
+    el("nextWeek").addEventListener("click", () => {
+      weekStart = addDays(weekStart, 7);
+      clearForm(weekDays()[0]);
+      render();
+    });
+    el("newPlanButton").addEventListener("click", () => {
+      clearForm(selectedDateInfo());
+      el("planTitle").focus();
+    });
+    el("planDay").addEventListener("change", (event) => {
+      const day = weekDays().find((item) => item.iso === event.target.value) || weekDays()[0];
+      selectedIso = day.iso;
+      selectedDay = day.day;
+      render();
+    });
+    el("clearPlan").addEventListener("click", () => clearForm(selectedDateInfo()));
+    el("savePlan").addEventListener("click", savePlan);
+    el("deletePlan").addEventListener("click", async () => {
+      if (!formId) return;
+      await remove(ref(db, `events/${formId}`));
+      clearForm(selectedDateInfo());
+    });
+    el("addDailyTask").addEventListener("click", async () => {
+      await addTask("tasks", el("dailyTaskText").value, { date: selectedIso });
+      el("dailyTaskText").value = "";
+    });
+    el("dailyTaskText").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") el("addDailyTask").click();
+    });
+    el("addGlobalTask").addEventListener("click", async () => {
+      await addTask("globalTasks", el("globalTaskText").value);
+      el("globalTaskText").value = "";
+    });
+    el("globalTaskText").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") el("addGlobalTask").click();
+    });
+    el("addRepeatable").addEventListener("click", async () => {
+      const text = el("repeatableText").value.trim();
+      if (!text) return;
+      const category = categoryFor(el("repeatableCategory").value);
+      await set(push(ref(db, "repeatableTasks")), {
+        text,
+        done: false,
+        category: category.name,
+        color: category.color,
+        createdAt: serverTimestamp()
+      });
+      el("repeatableText").value = "";
+    });
+    el("repeatableText").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") el("addRepeatable").click();
+    });
+    el("addBirthday").addEventListener("click", async () => {
+      const name = el("birthdayName").value.trim();
+      const date = el("birthdayDate").value;
+      if (!name || !date) return;
+      await set(push(ref(db, "birthdays")), { name, date, createdAt: serverTimestamp() });
+      el("birthdayName").value = "";
+      el("birthdayDate").value = "";
+    });
+
+    onValue(ref(db, "events"), (snapshot) => {
+      events = itemList(snapshot.val());
+      el("syncStatus").textContent = "Synced";
+      render();
+    });
+    onValue(ref(db, "tasks"), (snapshot) => {
+      tasks = itemList(snapshot.val());
+      render();
+    });
+    onValue(ref(db, "globalTasks"), (snapshot) => {
+      globalTasks = itemList(snapshot.val());
+      render();
+    });
+    onValue(ref(db, "repeatableTasks"), (snapshot) => {
+      repeatableTasks = itemList(snapshot.val());
+      render();
+    });
+    onValue(ref(db, "birthdays"), (snapshot) => {
+      birthdays = itemList(snapshot.val());
+      render();
+    });
+    window.addEventListener("beforeunload", () => off(ref(db)));
+    render();
+  </script>
+</body>
+</html>
